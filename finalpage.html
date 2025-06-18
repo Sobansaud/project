@@ -24,6 +24,12 @@
       margin-bottom: 10px;
       width: 100%;
     }
+
+    .waiting-text {
+      color: gray;
+      font-style: italic;
+      margin-bottom: 10px;
+    }
   </style>
 </head>
 
@@ -37,7 +43,7 @@
 
     <button id="submitAnswerBtn" class="btn btn-success mb-2 d-none">Submit Answer</button>
     <button id="nextBtn" class="btn btn-primary">Next</button>
-    <button id="endBtn" class="btn btn-danger">End Game</button>
+    <button id="endBtn" class="btn btn-danger d-none">End Game</button>
 
     <h5>Players</h5>
     <div id="playersContainer" class="d-flex flex-wrap justify-content-center"></div>
@@ -72,29 +78,39 @@
     const nextBtn = document.getElementById("nextBtn");
     const endBtn = document.getElementById("endBtn");
 
-    let timer = 60;
+    let timer = 150;
     let timerInterval;
 
     let selectedOption = null;
+    let isLastQuestion = false;
 
     const sampleQuestions = [
-      { q: "What is your favorite color?", options: ["Red", "Blue"] },
-      { q: "Capital of France?", options: ["Paris", "Berlin"] },
-      { q: "Largest mammal?", options: ["Elephant", "Whale"] },
-      { q: "Sun rises from?", options: ["East", "West"] },
-      { q: "2 + 2 = ?", options: ["3", "4"] },
-    ];
+  { q: "What is your favorite color?", options: ["Red", "Blue"] },
+  { q: "Capital of France?", options: ["Paris", "Berlin"] },
+  { q: "Largest mammal?", options: ["Elephant", "Whale"] },
+  { q: "Sun rises from?", options: ["East", "West"] },
+  { q: "2 + 2 = ?", options: ["3", "4"] },
+  { q: "Fastest land animal?", options: ["Cheetah", "Lion"] },
+  { q: "Which is a fruit?", options: ["Carrot", "Apple"] },
+  { q: "Water boils at?", options: ["100°C", "90°C"] },
+  { q: "Which one can fly?", options: ["Eagle", "Penguin"] },
+  { q: "Planet known as Red Planet?", options: ["Mars", "Venus"] },
+  { q: "What is H2O?", options: ["Water", "Oxygen"] },
+  { q: "Who painted Mona Lisa?", options: ["Da Vinci", "Picasso"] },
+  { q: "Which is bigger?", options: ["Sun", "Moon"] }
+];
 
-    function startTimer() {
+
+    function startTimer(autoNextCallback) {
       clearInterval(timerInterval);
-      timer = 60;
+      timer = 150;
       document.getElementById("timer").textContent = formatTime(timer);
       timerInterval = setInterval(() => {
         timer--;
         document.getElementById("timer").textContent = formatTime(timer);
         if (timer <= 0) {
           clearInterval(timerInterval);
-          submitGuess(null);
+          if (autoNextCallback) autoNextCallback();
         }
       }, 1000);
     }
@@ -117,19 +133,26 @@
 
     function nextQuestionTurn(currentPlayers) {
       const playerNames = Object.keys(currentPlayers);
-      const currentTurnPlayer = playerNames.find(p => !currentPlayers[p].played) || playerNames[0];
+      const remainingPlayers = playerNames.filter(p => !currentPlayers[p].played);
+      isLastQuestion = remainingPlayers.length <= 1;
+
+      const nextPlayer = remainingPlayers[0] || playerNames[0];
       const q = sampleQuestions[Math.floor(Math.random() * sampleQuestions.length)];
 
       gameRef.child("currentQuestion").set({
         question: q.q,
         options: q.options,
-        askedTo: currentTurnPlayer,
+        askedTo: nextPlayer,
         selectedAnswer: null,
         guesses: {},
         completedPlayers: {}
       });
 
-      gameRef.child(`players/${currentTurnPlayer}/played`).set(true);
+      gameRef.child(`players/${nextPlayer}/played`).set(true);
+
+      // Update button visibility
+      nextBtn.classList.toggle("d-none", isLastQuestion);
+      endBtn.classList.toggle("d-none", !isLastQuestion);
     }
 
     gameRef.child("players").on("value", snapshot => {
@@ -160,14 +183,29 @@
         });
       } else {
         questionSection.innerHTML = `<h6>${qData.askedTo}'s Question:</h6><p>${qData.question}</p>`;
+
+        if (!qData.selectedAnswer) {
+          const waitingMsg = document.createElement("div");
+          waitingMsg.className = "waiting-text";
+          waitingMsg.textContent = `Waiting for ${qData.askedTo} to select an answer...`;
+          optionsContainer.appendChild(waitingMsg);
+        }
+
         qData.options.forEach(opt => {
           const btn = document.createElement("button");
           btn.className = "btn btn-outline-secondary guess-option";
           btn.textContent = opt;
+          btn.disabled = !qData.selectedAnswer;
           btn.onclick = () => submitGuess(opt);
           optionsContainer.appendChild(btn);
         });
-        startTimer();
+
+        nextBtn.disabled = !qData.selectedAnswer;
+        startTimer(() => {
+          // Auto-next when timer ends
+          submitGuess(null);
+          setTimeout(() => handleNext(), 1000);
+        });
       }
     });
 
@@ -184,6 +222,11 @@
     }
 
     nextBtn.onclick = () => {
+      handleNext();
+    };
+
+    function handleNext() {
+      clearInterval(timerInterval);
       gameRef.child("players").once("value").then(snapshot => {
         const players = snapshot.val() || {};
         gameRef.child("currentQuestion/guesses").once("value").then(guessSnap => {
@@ -202,7 +245,7 @@
         });
       });
       nextBtn.disabled = true;
-    };
+    }
 
     endBtn.onclick = () => {
       database.ref(`games/${accessCode}/players/${savedPlayerName}`).remove()
@@ -211,7 +254,6 @@
         });
     };
 
-    // Start game if empty
     gameRef.once("value", snap => {
       if (!snap.hasChild("currentQuestion")) {
         gameRef.child("players").once("value").then(snapshot => {
@@ -219,7 +261,6 @@
         });
       }
     });
-
   </script>
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.6/dist/js/bootstrap.bundle.min.js"></script>

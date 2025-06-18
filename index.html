@@ -111,7 +111,7 @@
                 alert("Please enter your name.");
                 return;
             }
-
+            localStorage.setItem('hostNameFor_', 'host')
             localStorage.setItem('playerName', name);
             const gameCode = generateGameCode();
             localStorage.setItem('gameCode', gameCode);
